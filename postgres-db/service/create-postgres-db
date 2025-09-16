@@ -1,0 +1,46 @@
+#!/bin/bash
+set -e
+export WORKING_DIRECTORY_ORIGINAL="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd $WORKING_DIRECTORY_ORIGINAL
+
+source ./handle-helm.sh
+
+# Wait for PostgreSQL service to be ready
+SERVICE_IP=""
+MAX_RETRIES=60
+RETRY_COUNT=0
+
+echo "Waiting for PostgreSQL service to be ready..."
+while [[ -z "$SERVICE_IP" && $RETRY_COUNT -lt $MAX_RETRIES ]]; do
+    SERVICE_IP=$(kubectl get svc $PROJECT-postgres -n postgres-db -o json 2>/dev/null | jq ".spec.clusterIP" -r 2>/dev/null || true)
+    if [[ -z "$SERVICE_IP" || "$SERVICE_IP" == "null" ]]; then
+        echo "Waiting for service IP... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+        sleep 10
+        ((RETRY_COUNT++))
+    fi
+done
+
+if [[ -z "$SERVICE_IP" || "$SERVICE_IP" == "null" ]]; then
+    echo "Failed to get PostgreSQL service IP after $MAX_RETRIES attempts"
+    exit 1
+fi
+
+# Wait for PostgreSQL pod to be ready
+echo "Waiting for PostgreSQL pod to be ready..."
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=$PROJECT-postgres -n postgres-db --timeout=300s || true
+
+# Get database name and generate secret name
+DB_NAME="${ACTION_PARAMETERS_USAGE_TYPE:-app}_db"
+SECRET_NAME="$PROJECT-postgres-credentials"
+HELM_RELEASE_NAME="$PROJECT-postgres"
+
+# Construct response with connection details
+JSON_RESPONSE=$(echo $NP_ACTION_CONTEXT | jq "{
+    hostname: \"$SERVICE_IP\", 
+    port: 5432, 
+    dbname: \"$DB_NAME\",
+    helm_release_name: \"$HELM_RELEASE_NAME\",
+    k8s_secret_name: \"$SECRET_NAME\"
+}")
+
+np service action update --results "$JSON_RESPONSE"

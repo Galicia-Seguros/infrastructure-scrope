@@ -1,0 +1,29 @@
+#!/bin/bash
+
+set -e
+export WORKING_DIRECTORY_ORIGINAL="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd $WORKING_DIRECTORY_ORIGINAL
+
+source ./project.sh
+
+echo "Deleting PostgreSQL service..."
+
+# Uninstall Helm chart
+helm uninstall $PROJECT-postgres -n postgres-db || true
+
+# Delete specific persistent volume claims for this PostgreSQL instance
+echo "Deleting persistent volume claims for $PROJECT-postgres..."
+kubectl delete pvc data-$PROJECT-postgres-0 -n postgres-db --ignore-not-found=true
+
+# Get the specific PV that was bound to our PVC and delete it
+echo "Cleaning up associated persistent volume..."
+PV_NAME=$(kubectl get pv -o json | jq -r '.items[] | select(.spec.claimRef.name == "data-'$PROJECT'-postgres-0" and .spec.claimRef.namespace == "postgres-db") | .metadata.name' 2>/dev/null || true)
+if [ -n "$PV_NAME" ]; then
+    echo "Deleting persistent volume: $PV_NAME"
+    kubectl delete pv $PV_NAME --ignore-not-found=true || true
+fi
+
+# Delete the secret
+kubectl delete secret $PROJECT-postgres-credentials -n postgres-db --ignore-not-found=true
+
+echo "PostgreSQL service and volumes deleted successfully"

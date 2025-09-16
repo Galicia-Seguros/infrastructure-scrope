@@ -1,0 +1,39 @@
+#!/bin/bash
+
+set -e
+export WORKING_DIRECTORY_ORIGINAL="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd $WORKING_DIRECTORY_ORIGINAL
+../ensure_psql.sh
+
+# Get service connection details
+SERVICE_HOSTNAME=$ACTION_SERVICE_ATTRIBUTES_HOSTNAME
+SERVICE_PORT=$ACTION_SERVICE_ATTRIBUTES_PORT
+SERVICE_DBNAME=$ACTION_SERVICE_ATTRIBUTES_DBNAME
+SECRET_NAME=$ACTION_SERVICE_ATTRIBUTES_K_8_S_SECRET_NAME
+
+# Get link parameters
+export DB_USERNAME="usr$(uuidgen | tr -d "-")"
+USER_TYPE=$ACTION_PARAMETERS_USER_TYPE
+GENERATED_PASSWORD=pwd"$(uuidgen)"
+
+# Get admin credentials from K8s secret
+ADMIN_PASSWORD=$(kubectl get secret $SECRET_NAME -n postgres-db -o json | jq -r '.data["postgres-password"]' | base64 -d)
+
+# Prepare user creation query
+USER_CREATION_QUERY="
+-- Create user
+CREATE USER "$DB_USERNAME" WITH PASSWORD '$GENERATED_PASSWORD';
+"
+
+# Execute user creation using PostgreSQL client pod
+../run_query_in_pod.sh "$SERVICE_HOSTNAME" "$SERVICE_PORT" "$SERVICE_DBNAME" "postgres" "$ADMIN_PASSWORD" "$USER_CREATION_QUERY" "ddl"
+
+# After create we run edit to set permissions
+./update-database-user
+# Update link results with connection details
+JSON_RESPONSE=$(echo $NP_ACTION_CONTEXT | jq ".notification.parameters + {
+    username: \"$DB_USERNAME\", 
+    password: \"$GENERATED_PASSWORD\"
+}")
+
+np link action update --results "$JSON_RESPONSE"

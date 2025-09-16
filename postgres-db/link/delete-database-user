@@ -1,0 +1,39 @@
+#!/bin/bash
+
+set -e
+export WORKING_DIRECTORY_ORIGINAL="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd $WORKING_DIRECTORY_ORIGINAL
+
+# Get service connection details
+SERVICE_HOSTNAME=$ACTION_SERVICE_ATTRIBUTES_HOSTNAME
+SERVICE_PORT=$ACTION_SERVICE_ATTRIBUTES_PORT
+SERVICE_DBNAME=$ACTION_SERVICE_ATTRIBUTES_DBNAME
+SECRET_NAME=$ACTION_SERVICE_ATTRIBUTES_K_8_S_SECRET_NAME
+
+# Get link parameters
+USERNAME=$ACTION_LINK_ATTRIBUTES_USERNAME
+
+# Get admin credentials from K8s secret
+ADMIN_PASSWORD=$(kubectl get secret $SECRET_NAME -n postgres-db -o json | jq -r '.data["postgres-password"]' | base64 -d)
+
+# Connect to PostgreSQL and delete user
+QUERY=$(cat << EOF
+-- Revoke all privileges first
+REVOKE ALL PRIVILEGES ON DATABASE "$SERVICE_DBNAME" FROM "$USERNAME";
+REVOKE ALL PRIVILEGES ON SCHEMA public FROM "$USERNAME";
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM "$USERNAME";
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM "$USERNAME";
+ALTER USER "$USERNAME" WITH NOSUPERUSER;
+
+-- Reassign or drop owned objects
+REASSIGN OWNED BY "$USERNAME" TO postgres;
+DROP OWNED BY "$USERNAME";
+
+-- Now drop the user
+DROP USER IF EXISTS "$USERNAME";
+EOF)
+
+../run_query_in_pod.sh "$SERVICE_HOSTNAME" "$SERVICE_PORT" "$SERVICE_DBNAME" "postgres" "$ADMIN_PASSWORD" "$QUERY" "ddl"
+
+
+echo "User $USERNAME deleted successfully"

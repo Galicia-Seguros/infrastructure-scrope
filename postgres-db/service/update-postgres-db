@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -e
+export WORKING_DIRECTORY_ORIGINAL="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd $WORKING_DIRECTORY_ORIGINAL
+
+# For updates, we just re-run the Helm deployment with new values
+source ./handle-helm.sh
+
+echo "PostgreSQL service updated successfully"

@@ -1,0 +1,47 @@
+#!/bin/bash
+
+set -e
+export WORKING_DIRECTORY_ORIGINAL="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd $WORKING_DIRECTORY_ORIGINAL
+
+# Get service connection details
+SERVICE_HOSTNAME=$ACTION_SERVICE_ATTRIBUTES_HOSTNAME
+SERVICE_PORT=$ACTION_SERVICE_ATTRIBUTES_PORT
+SERVICE_DBNAME=$ACTION_SERVICE_ATTRIBUTES_DBNAME
+SECRET_NAME=$ACTION_SERVICE_ATTRIBUTES_K_8_S_SECRET_NAME
+
+# Re export due encoding
+eval "echo $(np service-action export-action-data --format bash --bash-prefix ACTION)"
+# Get query parameter
+QUERY="$ACTION_PARAMETERS_QUERY"
+
+# Validate that this is a DML query (not DDL)
+if echo "$QUERY" | grep -iE "^\s*(CREATE|ALTER|DROP|TRUNCATE)" > /dev/null; then
+    ERROR_MSG="DDL queries are not allowed in DML action. Use run-ddl-query instead."
+    JSON_RESPONSE='{"error": "'$ERROR_MSG'"}'
+    np service action update --results "$JSON_RESPONSE"
+    exit 1
+fi
+
+# validate if query is a select to wrap it as json 
+if echo "$QUERY" | grep -iE "^\s*SELECT" > /dev/null; then
+    QUERY="SELECT json_agg(row_to_json(t)) FROM ($QUERY) t;"
+    export is_select_query=true
+fi
+
+# Get admin credentials from K8s secret
+ADMIN_PASSWORD=$(kubectl get secret $SECRET_NAME -n postgres-db -o json | jq -r '.data["postgres-password"]' | base64 -d)
+
+# Execute the DDL query using PostgreSQL client pod
+ERROR_MSG=""
+RESULT_MSG=""
+OUTPUT_FILE="/tmp/ddl_query_output-$ACTION_ID.txt"
+../run_query_in_pod.sh "$SERVICE_HOSTNAME" "$SERVICE_PORT" "$SERVICE_DBNAME" "postgres" "$ADMIN_PASSWORD" "$QUERY" "dml" "$OUTPUT_FILE"
+if [[ "$is_select_query" == "true" ]]; then
+    JSON=$(cat $OUTPUT_FILE | jq -r)
+    JSON_RESPONSE="{\"results\": $JSON}"
+else
+    ENCODED_OUTPUT=$(printf '%s' "$(cat $OUTPUT_FILE)" | jq -Rs .)
+    JSON_RESPONSE="{\"textresult\": $ENCODED_OUTPUT}"
+fi
+np service action update --results "$JSON_RESPONSE"
