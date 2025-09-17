@@ -35,4 +35,7 @@ gomplate \
   -f values.yaml.tpl > /tmp/values-$PROJECT.yaml
 
 # Install using Bitnami PostgreSQL chart
-helm upgrade --install -n postgres-db $PROJECT-postgres bitnami/postgresql -f /tmp/values-$PROJECT.yaml --create-namespace > /dev/null
+helm upgrade --install -n postgres-db $PROJECT-postgres bitnami/postgresql \
+  -f /tmp/values-$PROJECT.yaml \
+  --set image.repository=bitnamilegacy/postgresql \
+  --create-namespace > /dev/null

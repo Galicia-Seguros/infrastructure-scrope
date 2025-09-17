@@ -2,7 +2,7 @@
 
 WORKING_DIRECTORY="$(dirname "$(realpath "$0")")"
 cd "$WORKING_DIRECTORY" || exit 1
-
+source ./install-helm.sh
 source ./process-notification.sh
 
 echo "Starting handle agent service"
