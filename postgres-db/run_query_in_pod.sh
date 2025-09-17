@@ -70,7 +70,7 @@ spec:
   restartPolicy: Never
   containers:
   - name: psql-client
-    image: bitnami/postgresql:latest
+    image: postgres:latest
     command: ["/bin/bash", "-c"]
     args: 
     - |
