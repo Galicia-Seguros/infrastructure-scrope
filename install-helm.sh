@@ -4,17 +4,5 @@
 #   chmod +x install-helm-apk.sh
 #   ./install-helm-apk.sh
 
-set -eu
-
-echo "==> Instalando Helm con apk..."
-# Idempotente: si ya está instalado, no falla
-if apk info -e helm >/dev/null 2>&1; then
-  echo "==> Helm ya está instalado: $(helm version --short || true)"
-  exit 0
-fi
-
-# Actualiza índices y evita cache para mantener la imagen liviana
-apk add --no-cache helm
-
-echo "==> Verificación:"
-helm version
+apk add --no-cache bash curl tar openssl
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
