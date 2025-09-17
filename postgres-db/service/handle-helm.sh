@@ -1,7 +1,7 @@
 #!/bin/bash
 export WORKING_DIRECTORY_ORIGINAL="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $WORKING_DIRECTORY_ORIGINAL
-source ./install-helm.sh
+
 source ./project.sh
 
 # Add Bitnami Helm repo if not already added
